@@ -1,0 +1,100 @@
+# GCP Project Configuration
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# Workload Identity Pool Configuration
+pool_id           = "osd-workload-pool"
+pool_display_name = "Red Hat OSD Workload Identity Pool"
+pool_description  = "Workload identity pool for Red Hat OpenShift Dedicated clusters"
+pool_disabled     = false
+
+# Workload Identity Provider Configuration
+provider_id           = "osd-provider"
+provider_display_name = "Red Hat OSD OIDC Provider"
+provider_description  = "OIDC provider for Red Hat OpenShift Dedicated cluster"
+provider_disabled     = false
+
+# Red Hat OSD Configuration
+# To get the issuer URI, run this command on your OSD cluster:
+# oc get authentication.config.openshift.io cluster -o json | jq -r .spec.serviceAccountIssuer
+# Or check the OSD console under Administration -> Cluster Settings -> Configuration -> OAuth
+osd_issuer_uri   = "https://your-osd-cluster.openshift.com"
+osd_cluster_name = "my-osd-cluster"
+
+# Optional: Specify allowed audiences (leave empty to accept all)
+# osd_allowed_audiences = ["openshift"]
+osd_allowed_audiences = []
+
+# Include cluster name in attributes for multi-cluster setups
+include_cluster_name = true
+
+# Access Control - Restrict to specific namespaces (empty allows all)
+# Example: Only allow workloads from these namespaces to authenticate
+allowed_namespaces = [
+  "production",
+  "staging",
+  "development"
+]
+
+# Optional: Custom attribute condition using CEL (Common Expression Language)
+# This overrides allowed_namespaces if set
+# Examples:
+# - Single namespace: "attribute.namespace == 'production'"
+# - Multiple conditions: "attribute.namespace in ['prod', 'staging'] && attribute.service_account_name != 'debug-sa'"
+attribute_condition = ""
+
+# Service Account Configuration
+# Define GCP service accounts and map them to OSD service accounts
+service_accounts = {
+  # Example: GCS access service account
+  "gcs-access-sa" = {
+    display_name        = "GCS Access Service Account"
+    description         = "Service account for accessing Google Cloud Storage from OSD"
+    roles = [
+      "roles/storage.objectViewer",
+      "roles/storage.objectCreator"
+    ]
+    osd_namespace       = "production"
+    osd_service_account = "gcs-workload-sa"
+  }
+
+  # Example: BigQuery service account
+  "bigquery-sa" = {
+    display_name        = "BigQuery Service Account"
+    description         = "Service account for BigQuery access from OSD"
+    roles = [
+      "roles/bigquery.dataViewer",
+      "roles/bigquery.jobUser"
+    ]
+    osd_namespace       = "data-processing"
+    osd_service_account = "bigquery-workload-sa"
+  }
+
+  # Example: Pub/Sub service account
+  "pubsub-sa" = {
+    display_name        = "Pub/Sub Service Account"
+    description         = "Service account for Pub/Sub operations from OSD"
+    roles = [
+      "roles/pubsub.subscriber",
+      "roles/pubsub.publisher"
+    ]
+    osd_namespace       = "messaging"
+    osd_service_account = "pubsub-workload-sa"
+  }
+
+  # Example: Secret Manager access
+  "secrets-sa" = {
+    display_name        = "Secret Manager Service Account"
+    description         = "Service account for accessing GCP Secret Manager from OSD"
+    roles = [
+      "roles/secretmanager.secretAccessor"
+    ]
+    osd_namespace       = "production"
+    osd_service_account = "secrets-workload-sa"
+  }
+}
+
+# Kubernetes Manifest Generation
+generate_k8s_manifests     = true
+k8s_namespace             = "default"
+generate_sample_deployment = false

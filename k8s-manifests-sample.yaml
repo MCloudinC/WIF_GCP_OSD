@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wif-demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gcp-workload-sa
+  namespace: wif-demo
+  annotations:
+    # This annotation will be added by Terraform-generated manifests
+    iam.gke.io/gcp-service-account: "YOUR_GCP_SA_EMAIL@PROJECT.iam.gserviceaccount.com"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-wif-config
+  namespace: wif-demo
+data:
+  PROJECT_ID: "YOUR_PROJECT_ID"
+  PROJECT_NUMBER: "YOUR_PROJECT_NUMBER"
+  POOL_ID: "osd-workload-pool"
+  PROVIDER_ID: "osd-provider"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-wif-demo
+  namespace: wif-demo
+  labels:
+    app: gcp-wif-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gcp-wif-demo
+  template:
+    metadata:
+      labels:
+        app: gcp-wif-demo
+    spec:
+      serviceAccountName: gcp-workload-sa
+      containers:
+      - name: app
+        image: google/cloud-sdk:alpine
+        command: ["/bin/sh"]
+        args: 
+        - -c
+        - |
+          echo "Starting GCP WIF Demo Application"
+          echo "================================"
+          
+          # Get the service account token
+          TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          echo "✓ Retrieved Kubernetes service account token"
+          
+          # Exchange token for GCP access token
+          echo "→ Exchanging token with GCP STS..."
+          
+          RESPONSE=$(curl -s -X POST https://sts.googleapis.com/v1/token \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+            -d "audience=//iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/providers/${PROVIDER_ID}" \
+            -d "subject_token_type=urn:ietf:params:oauth:token-type:jwt" \
+            -d "requested_token_type=urn:ietf:params:oauth:token-type:access_token" \
+            -d "scope=https://www.googleapis.com/auth/cloud-platform" \
+            -d "subject_token=${TOKEN}")
+          
+          if echo "$RESPONSE" | grep -q "access_token"; then
+            echo "✓ Successfully obtained GCP access token"
+            
+            # Extract access token
+            ACCESS_TOKEN=$(echo $RESPONSE | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
+            
+            # Test GCP access
+            echo ""
+            echo "Testing GCP Access:"
+            echo "-------------------"
+            
+            # Try to list GCS buckets
+            echo "→ Attempting to list GCS buckets..."
+            curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              "https://storage.googleapis.com/storage/v1/b?project=${PROJECT_ID}" | \
+              grep -q '"kind":"storage#buckets"' && \
+              echo "✓ Successfully accessed GCS API" || \
+              echo "✗ Failed to access GCS API (may need storage permissions)"
+            
+            # Get caller identity
+            echo ""
+            echo "→ Getting caller identity..."
+            IDENTITY=$(curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              "https://iam.googleapis.com/v1/projects/${PROJECT_ID}/serviceAccounts")
+            echo "Identity check complete"
+            
+          else
+            echo "✗ Failed to obtain GCP access token"
+            echo "Error response: $RESPONSE"
+          fi
+          
+          echo ""
+          echo "================================"
+          echo "Demo application keeping alive..."
+          
+          # Keep container running
+          while true; do
+            sleep 3600
+          done
+        env:
+        - name: PROJECT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gcp-wif-config
+              key: PROJECT_ID
+        - name: PROJECT_NUMBER
+          valueFrom:
+            configMapKeyRef:
+              name: gcp-wif-config
+              key: PROJECT_NUMBER
+        - name: POOL_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gcp-wif-config
+              key: POOL_ID
+        - name: PROVIDER_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gcp-wif-config
+              key: PROVIDER_ID
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gcp-tools
+  namespace: wif-demo
+  labels:
+    app: gcp-tools
+spec:
+  serviceAccountName: gcp-workload-sa
+  containers:
+  - name: gcloud
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:alpine
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "GCP Tools Pod Ready"
+      echo "==================="
+      echo ""
+      echo "This pod has the gcloud CLI pre-installed."
+      echo "To use it, exec into this pod:"
+      echo "  kubectl exec -it gcp-tools -n wif-demo -- /bin/bash"
+      echo ""
+      echo "Then you can run commands like:"
+      echo "  gcloud auth list"
+      echo "  gcloud config list"
+      echo "  gsutil ls"
+      echo "  bq ls"
+      echo ""
+      sleep infinity
+    env:
+    - name: GOOGLE_APPLICATION_CREDENTIALS
+      value: "/var/run/secrets/workload-identity/token"
+    - name: CLOUDSDK_CORE_PROJECT
+      valueFrom:
+        configMapKeyRef:
+          name: gcp-wif-config
+          key: PROJECT_ID
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
