@@ -2,33 +2,6 @@
 
 This Terraform configuration sets up Workload Identity Federation (WIF) between Google Cloud Platform (GCP) and Red Hat OpenShift Dedicated (OSD) clusters, allowing OSD workloads to securely access GCP services without storing service account keys.
 
-## Architecture Overview
-
-```
-Red Hat OSD Cluster                    Google Cloud Platform
-┌──────────────────┐                  ┌────────────────────────┐
-│                  │                  │                        │
-│  Pod with SA     │ OIDC Token      │  Workload Identity    │
-│  ┌────────────┐  │ ───────────────►│  Pool & Provider      │
-│  │ Workload   │  │                  │                        │
-│  └────────────┘  │                  │  ┌──────────────┐     │
-│                  │                  │  │ IAM Binding  │     │
-│  Service Account │                  │  └──────────────┘     │
-│  (Kubernetes)    │                  │           │            │
-│                  │                  │           ▼            │
-│                  │                  │  ┌──────────────┐     │
-└──────────────────┘                  │  │ GCP Service  │     │
-                                      │  │   Account    │     │
-                                      │  └──────────────┘     │
-                                      │           │            │
-                                      │           ▼            │
-                                      │  ┌──────────────┐     │
-                                      │  │ GCP Resources│     │
-                                      │  │ (GCS, BQ,    │     │
-                                      │  │  Pub/Sub)    │     │
-                                      │  └──────────────┘     │
-                                      └────────────────────────┘
-```
 
 ## Prerequisites
 
